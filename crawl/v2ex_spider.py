@@ -5,6 +5,7 @@
 
 from pyspider.libs.base_handler import *
 import MySQLdb
+import random
 
 
 class Handler(BaseHandler):
@@ -15,15 +16,28 @@ class Handler(BaseHandler):
         self.db = MySQLdb.connect('rm-wz9v6ey1y446me9055o.mysql.rds.aliyuncs.com', 'root', '@qwe123456', 'qa',
                                   charset='utf8')
 
-    def insert_value(self, title, content):
+    def insert_value(self, title, content, count):
         try:
             cursor = self.db.cursor()
             sql = 'INSERT INTO `qa`.`tb_question`( `title`, `content`, `user_id`, `created_date`, `comment_count`, `is_del`) VALUES ("%s","%s",%d,%s,%d,%d)' % (
-                title, content, 22, 'datetime.datetime.now()+datetime.timedelta(minutes=randint(2,2000))', 0, 0)
+                title, content, random.randint(208, 342), 'now()', count, 0)
             cursor.execute(sql)
             qid = cursor.lastrowid
             self.db.commit()
-            print(qid)
+            return qid
+        except Exception as e:
+            print(e)
+            self.db.rollback()
+        return 0
+
+    def add_comment(self, comment, qid):
+        try:
+            cursor = self.db.cursor()
+            sql = 'insert into tb_comment(content, entity_type, entity_id, user_id, add_time) values ("%s",%d,%d, %d,%s)' % (
+            comment, 0, qid, random.randint(208, 342), 'now()')
+            print(sql)
+            cursor.execute(sql)
+            self.db.commit()
         except Exception as e:
             print(e)
             self.db.rollback()
@@ -54,11 +68,14 @@ class Handler(BaseHandler):
 
     @config(priority=2, age=10 * 24 * 60 * 60)
     def detail_page(self, response):
+        items = response.doc('div.reply_content').items()
         title = response.doc('h1').text()
         content = response.doc('div.topic_content').html()
         if content is not None:
             content = content.replace('"', '\\"')
-        self.insert_value(title, content)
+        qid = self.insert_value(title, content, sum(1 for x in items))
+        for each in response.doc('div.reply_content').items():
+            self.add_comment(each.text().replace('"', '\\"'), qid)
         return {
             "url": response.url,
             "title": response.doc('h1').text(),
